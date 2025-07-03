@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wheat Game</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100dvh; width: 100%; overflow: hidden; font-family: sans-serif; background: #111; }
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    #game {
+      flex: 1;
+      background: linear-gradient(to right, #3b7a40 50%, #6b4722 50%);
+      position: relative;
+      overflow: hidden;
+    }
+    .character {
+      position: absolute;
+      width: 48px;
+      height: 72px;
+      top: 40%;
+      left: 10%;
+      z-index: 10;
+    }
+    .character img { width: 100%; height: 100%; object-fit: contain; }
+    .soil {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      background-color: #4a2a0a;
+      border-radius: 50%;
+      opacity: 0.8;
+    }
+    .wheat-tile {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      opacity: 0;
+      pointer-events: auto;
+      cursor: pointer;
+      transition: all 1s ease;
+    }
+    .wheat-stage-1 { width: 20px; height: 20px; opacity: 0.3; }
+    .wheat-stage-2 { width: 30px; height: 30px; opacity: 0.6; }
+    .wheat-stage-3 { width: 40px; height: 40px; opacity: 1; }
+    .wheat-tile img { width: 100%; height: 100%; object-fit: contain; }
+    #balance {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: #444;
+      padding: 4px 8px;
+      border-radius: 8px;
+      font-weight: bold;
+      z-index: 10;
+      color: white;
+    }
+    #controls {
+      background: #2a0e0e;
+      padding: 12px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+    #controls button {
+      flex: 1;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: bold;
+      background: #441818;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #controls button:hover { background: #5c1c1c; }
+    #modal, #inventoryModal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    #modal-content, #inventory-content {
+      background: #222;
+      padding: 20px;
+      border-radius: 12px;
+      text-align: center;
+      color: white;
+      width: 90%;
+      max-width: 400px;
+    }
+    #modal input { width: 80px; padding: 6px; margin: 10px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="game" onclick="plantWheat(event)">
+      <div id="balance">💳 <span id="money">10000</span> $</div>
+      <div class="character">
+        <img src="photo_2025-06-27_15-11-51-removebg-preview.png" alt="Character">
+      </div>
+    </div>
+    <div id="controls">
+      <button onclick="openMarket()">Market</button>
+      <button onclick="openInventory()">Инвентарь</button>
+    </div>
+    <div id="modal">
+      <div id="modal-content">
+        <h3>🛒 Market</h3>
+        <p>Купить семена (70$/шт)</p>
+        <input type="number" id="seedCount" value="1" min="1" oninput="updateTotal()">
+        <div>💵 Общая цена: <span id="totalPrice">70</span>$</div>
+        <button onclick="buySeeds()">Купить</button>
+        <hr>
+        <p>Продать пшеницу (100$/шт)</p>
+        <button onclick="sellWheat()">Продать всю пшеницу</button>
+        <br><br>
+        <button onclick="closeModal()">Закрыть</button>
+      </div>
+    </div>
+    <div id="inventoryModal">
+      <div id="inventory-content">
+        <h3>🎒 Инвентарь</h3>
+        <p>🌾 Семена: <span id="seeds">0</span></p>
+        <p>🌿 Пшеница: <span id="wheat">0</span></p>
+        <button onclick="closeInventory()">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let balance = 10000;
+    let seeds = 0;
+    let wheatInventory = 0;
+    let soilCoords = [];
+
+    function updateUI() {
+      document.getElementById('money').innerText = balance.toFixed(0);
+      document.getElementById('seeds').innerText = seeds;
+      document.getElementById('wheat').innerText = wheatInventory;
+    }
+
+    function plantWheat(event) {
+      const game = document.getElementById('game');
+      if (event.target.closest('.character') || event.target.closest('.wheat-tile')) return;
+
+      const rect = game.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+
+      if (x < rect.width / 2) {
+        alert('Нельзя сажать в зелёной зоне!');
+        return;
+      }
+
+      if (seeds <= 0) {
+        alert('Нет семян!');
+        return;
+      }
+
+      for (let coord of soilCoords) {
+        const dx = coord.x - x;
+        const dy = coord.y - y;
+        if (Math.sqrt(dx * dx + dy * dy) < 40) {
+          alert('Слишком близко к другому растению!');
+          return;
+        }
+      }
+
+      seeds--;
+      updateUI();
+
+      const soil = document.createElement('div');
+      soil.className = 'soil';
+      soil.style.left = (x - 20) + 'px';
+      soil.style.top = (y - 20) + 'px';
+      game.appendChild(soil);
+
+      soilCoords.push({ x, y, element: soil });
+
+      const wheat = document.createElement('div');
+      wheat.className = 'wheat-tile';
+      wheat.style.left = (x - 20) + 'px';
+      wheat.style.top = (y - 20) + 'px';
+
+      const img = document.createElement('img');
+      img.src = 'phenica.svg';
+      wheat.appendChild(img);
+      game.appendChild(wheat);
+
+      setTimeout(() => wheat.classList.add('wheat-stage-1'), 1000);
+      setTimeout(() => wheat.classList.add('wheat-stage-2'), 60000);
+      setTimeout(() => {
+        wheat.classList.add('wheat-stage-3');
+        wheat.onclick = function () {
+          wheat.remove();
+          if (soil.parentElement) soil.remove();
+          soilCoords = soilCoords.filter(coord => coord.element !== soil);
+          wheatInventory += 1;
+          updateUI();
+        };
+      }, 120000);
+    }
+
+    function openMarket() {
+      document.getElementById('modal').style.display = 'flex';
+      updateTotal();
+    }
+    function closeModal() {
+      document.getElementById('modal').style.display = 'none';
+    }
+    function updateTotal() {
+      const count = parseInt(document.getElementById('seedCount').value);
+      document.getElementById('totalPrice').innerText = count * 70;
+    }
+    function buySeeds() {
+      const count = parseInt(document.getElementById('seedCount').value);
+      const cost = count * 70;
+      if (balance >= cost) {
+        balance -= cost;
+        seeds += count;
+        closeModal();
+        updateUI();
+      } else {
+        alert('Недостаточно средств!');
+      }
+    }
+    function sellWheat() {
+      if (wheatInventory > 0) {
+        balance += wheatInventory * 100;
+        wheatInventory = 0;
+        updateUI();
+        alert('Вы успешно продали всю пшеницу!');
+      } else {
+        alert('У вас нет пшеницы для продажи.');
+      }
+    }
+    function openInventory() {
+      document.getElementById('inventoryModal').style.display = 'flex';
+    }
+    function closeInventory() {
+      document.getElementById('inventoryModal').style.display = 'none';
+    }
+  </script>
+</body>
+</html>
